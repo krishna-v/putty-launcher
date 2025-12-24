@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>putty-launcher</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div id="app">
+      <section style="margin-top:18px">
+        <h2>Saved PuTTY Sessions</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="refreshSessions">Refresh</button>
+          <button id="launchSession">Launch Selected Session</button>
+        </div>
+        <ul id="sessionsList" style="margin-top:8px;padding:6px;border:1px solid #ddd;list-style:none"></ul>
+      </section>
+
+      <p style="margin-top:20px;color:#666">Note: installer support added; build with <code>npm run dist</code>.</p>
+    </div>
+    <script src="renderer.js"></script>
+  </body>
+</html>
