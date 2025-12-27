@@ -21,6 +21,10 @@ html, body { height: 100%; overflow: hidden; }
 .child-list .session-item.selected { background: #2b6cb0; color: #fff; }
 .empty { color: #666; padding: 8px; }
 
+/* Selected category header */
+.category-header.selected { background: #2b6cb0; color: #fff; }
+.category-header.selected .arrow::before { content: '▾'; }
+
 /* Context menu */
 .context-menu {
   position: fixed;

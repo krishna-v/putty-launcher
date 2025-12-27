@@ -7,6 +7,7 @@ async function refreshConfig() {
 function renderSessionsTree(tree) {
   const ul = $('sessionsList');
   ul.innerHTML = '';
+  // handle empty tree
   if (!tree || (Object.keys(tree.children || {}).length === 0 && (tree.sessions || []).length === 0)) {
     const li = document.createElement('li');
     li.textContent = 'No saved PuTTY sessions found.';
@@ -19,19 +20,38 @@ function renderSessionsTree(tree) {
     const nodeLi = document.createElement('li');
     nodeLi.className = 'category';
 
-    if (!isRoot) {
+    if (isRoot) {
+      Object.keys(node.children || {}).forEach(k => renderNode(node.children[k], nodeLi, false));
+      // Shouldn't be any sessions at root level, but just in case
+      (node.sessions || []).forEach(s => {
+        const c = document.createElement('li');
+        c.textContent = s;
+        c.tabIndex = 0;
+        c.className = 'session-item';
+        attachSessionItemHandlers(c, s, ul);
+        nodeLi.appendChild(c);
+        console.log('added root session item', s);   });
+    } else {
+      // Recurse into category
       const header = document.createElement('div');
       header.className = 'category-header';
       header.tabIndex = 0;
       // create arrow and title elements so arrow click only toggles collapse
       const arrow = document.createElement('span');
       arrow.className = 'arrow';
-      arrow.tabIndex = 0;
+      // arrow should not be focusable itself; header handles keyboard
       const title = document.createElement('span');
       title.className = 'title';
       title.textContent = node.name;
       header.appendChild(arrow);
       header.appendChild(title);
+      // make header clickable/selectable
+      header.addEventListener('click', (ev) => {
+        // select this category header
+        document.querySelectorAll('.session-item').forEach(x => x.classList.remove('selected'));
+        document.querySelectorAll('.category-header').forEach(h => h.classList.remove('selected'));
+        header.classList.add('selected');
+      });
       const childContainer = document.createElement('div');
       childContainer.className = 'child-container';
       const childUl = document.createElement('ul');
@@ -46,6 +66,7 @@ function renderSessionsTree(tree) {
         c.className = 'session-item';
         attachSessionItemHandlers(c, s, ul);
         childUl.appendChild(c);
+        console.log('added session item', s);
       });
 
       childUl.style.display = 'none';
@@ -55,22 +76,27 @@ function renderSessionsTree(tree) {
         childUl.style.display = isHidden ? 'block' : 'none';
         header.classList.toggle('expanded', isHidden);
       });
-      arrow.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') arrow.click(); });
+      // keyboard handling is on the header; arrow click still toggles
+      // allow toggling expand/collapse with keyboard on the header (Enter or Space)
+      header.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          // toggle the child list
+          const isHidden = childUl.style.display === 'none' || !childUl.style.display;
+          childUl.style.display = isHidden ? 'block' : 'none';
+          header.classList.toggle('expanded', isHidden);
+          // select this category
+          document.querySelectorAll('.session-item').forEach(x => x.classList.remove('selected'));
+          document.querySelectorAll('.category-header').forEach(h => h.classList.remove('selected'));
+          header.classList.add('selected');
+        }
+      });
 
       childContainer.appendChild(childUl);
       nodeLi.appendChild(header);
       nodeLi.appendChild(childContainer);
-    } else {
-      Object.keys(node.children || {}).forEach(k => renderNode(node.children[k], nodeLi, false));
-      (node.sessions || []).forEach(s => {
-        const c = document.createElement('li');
-        c.textContent = s;
-        c.tabIndex = 0;
-        c.className = 'session-item';
-        attachSessionItemHandlers(c, s, ul);
-        nodeLi.appendChild(c);
-      });
-    }
+      console.log('added category', node.name);
+    } 
 
     container.appendChild(nodeLi);
   }
@@ -134,6 +160,7 @@ function renderSessionsTree(tree) {
   function attachSessionItemHandlers(elem, sessionName, listRoot) {
     elem.addEventListener('click', () => {
       document.querySelectorAll('.session-item').forEach(x => x.classList.remove('selected'));
+      document.querySelectorAll('.category-header').forEach(h => h.classList.remove('selected'));
       elem.classList.add('selected');
     });
     elem.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') elem.click(); });
@@ -173,6 +200,65 @@ function renderSessionsTree(tree) {
       });
     });
   }
+
+  // Keyboard navigation helpers
+  function getVisibleSessionItems() {
+    return Array.from(document.querySelectorAll('.session-item, .category-header')).filter(el => el.offsetParent !== null);
+  }
+
+  function selectSessionElement(el) {
+    if (!el) return;
+    document.querySelectorAll('.session-item, .category-header').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    try { el.focus(); } catch (e) {}
+    el.scrollIntoView({ block: 'nearest' });
+  }
+
+  function moveSelection(delta) {
+    const items = getVisibleSessionItems();
+    if (!items.length) return;
+    let idx = items.findIndex(i => i.classList.contains('selected'));
+    if (idx === -1) idx = delta > 0 ? 0 : items.length - 1;
+    else idx = Math.max(0, Math.min(items.length - 1, idx + delta));
+    selectSessionElement(items[idx]);
+  }
+
+  // Global key handler when focus is inside the sessions area
+  document.addEventListener('keydown', (ev) => {
+    const active = document.activeElement;
+    const list = document.getElementById('sessionsList');
+    if (!list) return;
+    // const inside = list.contains(active) || active === list || (active && active.classList && active.classList.contains('session-item'));
+    const inside = list.contains(active);
+    if (!inside) return;
+    // If a category header is focused and expanded, ArrowDown should move into its first visible child
+    /*
+    if (ev.key === 'ArrowDown' && active && active.classList && active.classList.contains('category-header')) {
+      const nodeLi = active.closest('.category');
+      if (nodeLi) {
+        const childList = nodeLi.querySelector('.child-list');
+        if (childList && childList.style.display !== 'none') {
+          const firstChild = Array.from(childList.querySelectorAll('.session-item')).find(i => i.offsetParent !== null);
+          if (firstChild) {
+            ev.preventDefault();
+            // deselect category and select the child
+            document.querySelectorAll('.category-header').forEach(h => h.classList.remove('selected'));
+            selectSessionElement(firstChild);
+            return;
+          }
+        }
+      }
+      ev.preventDefault(); moveSelection(1);
+    }
+    */
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); moveSelection(1); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); moveSelection(-1); }
+    else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      const sel = document.querySelector('.session-item.selected');
+      if (sel) sel.click();
+    }
+  });
 
   // modal editor
   function createEditDialog() {

@@ -14,7 +14,7 @@
   "license": "GPL-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/<your-username>/putty-launcher.git"
+    "url": "https://github.com/krishna-v/putty-launcher.git"
   },
   "devDependencies": {
     "electron": "^26.0.0",
