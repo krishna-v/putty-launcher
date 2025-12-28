@@ -517,7 +517,59 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Listen for Export/Import menu actions
+  if (window.electronAPI && typeof window.electronAPI.onExportSessionsReg === 'function') {
+    window.electronAPI.onExportSessionsReg(async () => {
+      const res = await window.electronAPI.exportSessionsReg();
+      if (!res || !res.success) alert('Export failed: ' + (res && res.error));
+      else alert('Exported to ' + res.path);
+    });
+  }
+  if (window.electronAPI && typeof window.electronAPI.onImportSessionsReg === 'function') {
+    window.electronAPI.onImportSessionsReg(async () => {
+      const res = await window.electronAPI.importSessionsReg();
+      if (!res || !res.success) alert('Import failed: ' + (res && res.error));
+      else { alert('Imported .reg file'); await refreshSessions(); }
+    });
+  }
+  if (window.electronAPI && typeof window.electronAPI.onExportSessionsJson === 'function') {
+    window.electronAPI.onExportSessionsJson(async () => {
+      const res = await window.electronAPI.exportSessionsJson();
+      if (!res || !res.success) alert('Export failed: ' + (res && res.error));
+      else alert('Exported to ' + res.path);
+    });
+  }
+  if (window.electronAPI && typeof window.electronAPI.onImportSessionsJson === 'function') {
+    window.electronAPI.onImportSessionsJson(async () => {
+      const res = await window.electronAPI.importSessionsJson();
+      if (!res || !res.success) alert('Import failed: ' + (res && res.error));
+      else { alert('Imported JSON'); await refreshSessions(); }
+    });
+  }
+
   $('refreshSessions').addEventListener('click', refreshSessions);
+
+  // import/export handlers
+  $('exportReg')?.addEventListener('click', async () => {
+    const res = await window.electronAPI.exportSessionsReg();
+    if (!res || !res.success) alert('Export failed: ' + (res && res.error));
+    else alert('Exported to ' + res.path);
+  });
+  $('importReg')?.addEventListener('click', async () => {
+    const res = await window.electronAPI.importSessionsReg();
+    if (!res || !res.success) alert('Import failed: ' + (res && res.error));
+    else { alert('Imported .reg file'); await refreshSessions(); }
+  });
+  $('exportJson')?.addEventListener('click', async () => {
+    const res = await window.electronAPI.exportSessionsJson();
+    if (!res || !res.success) alert('Export failed: ' + (res && res.error));
+    else alert('Exported to ' + res.path);
+  });
+  $('importJson')?.addEventListener('click', async () => {
+    const res = await window.electronAPI.importSessionsJson();
+    if (!res || !res.success) alert('Import failed: ' + (res && res.error));
+    else { alert('Imported JSON'); await refreshSessions(); }
+  });
 
   $('launchSession').addEventListener('click', async () => {
     const ul = $('sessionsList');

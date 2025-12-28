@@ -11,4 +11,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   , getSessionCategory: (sessionName) => ipcRenderer.invoke('get-session-category', sessionName)
   , onOpenNewSession: (cb) => ipcRenderer.on('open-new-session', () => cb())
   , onOpenSettings: (cb) => ipcRenderer.on('open-settings', () => cb())
+  , onExportSessionsReg: (cb) => ipcRenderer.on('menu-export-reg', () => cb())
+  , onImportSessionsReg: (cb) => ipcRenderer.on('menu-import-reg', () => cb())
+  , onExportSessionsJson: (cb) => ipcRenderer.on('menu-export-json', () => cb())
+  , onImportSessionsJson: (cb) => ipcRenderer.on('menu-import-json', () => cb())
+  , exportSessionsReg: () => ipcRenderer.invoke('export-sessions-reg')
+  , importSessionsReg: () => ipcRenderer.invoke('import-sessions-reg')
+  , exportSessionsJson: () => ipcRenderer.invoke('export-sessions-json')
+  , importSessionsJson: () => ipcRenderer.invoke('import-sessions-json')
 });
