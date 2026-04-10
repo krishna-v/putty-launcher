@@ -1,6 +1,6 @@
 {
   "name": "putty-launcher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Electron app scaffold for Putty Launcher",
   "main": "src/main.js",
   "scripts": {
