@@ -40,10 +40,14 @@ function renderSessionsTree(tree) {
       const arrow = document.createElement('span');
       arrow.className = 'arrow';
       // arrow should not be focusable itself; header handles keyboard
+      const folderIcon = document.createElement('span');
+      folderIcon.className = 'folder-icon';
+      folderIcon.textContent = '📁';
       const title = document.createElement('span');
       title.className = 'title';
       title.textContent = node.name;
       header.appendChild(arrow);
+      header.appendChild(folderIcon);
       header.appendChild(title);
       // make header clickable/selectable
       header.addEventListener('click', (ev) => {
@@ -143,11 +147,15 @@ function renderSessionsTree(tree) {
     const launch = document.createElement('div');
     launch.className = 'context-menu-item';
     launch.textContent = 'Launch';
+    const editSession = document.createElement('div');
+    editSession.className = 'context-menu-item';
+    editSession.textContent = 'Edit Session';
     const edit = document.createElement('div');
     edit.className = 'context-menu-item';
     edit.textContent = 'Edit Category';
 
     menu.appendChild(launch);
+    menu.appendChild(editSession);
     menu.appendChild(edit);
     document.body.appendChild(menu);
 
@@ -163,6 +171,10 @@ function renderSessionsTree(tree) {
       document.querySelectorAll('.category-header').forEach(h => h.classList.remove('selected'));
       elem.classList.add('selected');
     });
+    elem.addEventListener('dblclick', async () => {
+      const res = await window.electronAPI.launchPutty({ session: sessionName });
+      if (!res.success) alert('Failed to launch session: ' + (res.error || 'unknown'));
+    });
     elem.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') elem.click(); });
 
     elem.addEventListener('contextmenu', async (ev) => {
@@ -177,11 +189,14 @@ function renderSessionsTree(tree) {
       menu.style.display = 'block';
 
       const launch = menu.querySelector('.context-menu-item:nth-child(1)');
-      const edit = menu.querySelector('.context-menu-item:nth-child(2)');
+      const editSession = menu.querySelector('.context-menu-item:nth-child(2)');
+      const edit = menu.querySelector('.context-menu-item:nth-child(3)');
 
-      // remove previous listeners by replacing with clones (preserves both items)
+      // remove previous listeners by replacing with clones (preserves items)
       const newLaunch = launch.cloneNode(true);
       launch.parentNode.replaceChild(newLaunch, launch);
+      const newEditSession = editSession.cloneNode(true);
+      editSession.parentNode.replaceChild(newEditSession, editSession);
       const newEdit = edit.cloneNode(true);
       edit.parentNode.replaceChild(newEdit, edit);
 
@@ -191,6 +206,10 @@ function renderSessionsTree(tree) {
         elem.click();
         const res = await window.electronAPI.launchPutty({ session: sessionName });
         if (!res.success) alert('Failed to launch session: ' + (res.error || 'unknown'));
+      });
+      newEditSession.addEventListener('click', async () => {
+        menu.style.display = 'none';
+        await showEditSessionDialog(sessionName);
       });
 
       newEdit.addEventListener('click', async () => {
@@ -338,6 +357,176 @@ function renderSessionsTree(tree) {
       cancel.addEventListener('click', onCancel);
     });
   }
+
+// Edit Session modal (full session values editor)
+function createEditSessionDialog() {
+  let modal = document.getElementById('sessionEditModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'sessionEditModal';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+
+  const dlg = document.createElement('div');
+  dlg.className = 'modal-dialog large';
+
+  const header = document.createElement('div'); header.className = 'modal-header';
+  const title = document.createElement('div'); title.className = 'modal-title'; title.textContent = 'Edit Session';
+  const info = document.createElement('div'); info.className = 'modal-info';
+  header.appendChild(title); header.appendChild(info);
+
+  const content = document.createElement('div'); content.className = 'modal-content';
+
+  // groups container
+  const groupsContainer = document.createElement('div'); groupsContainer.className = 'groups';
+
+  const footer = document.createElement('div'); footer.className = 'modal-footer';
+  const addBtn = document.createElement('button'); addBtn.textContent = 'Add Field'; addBtn.className = 'modal-add';
+  const buttons = document.createElement('div'); buttons.className = 'modal-buttons';
+  const ok = document.createElement('button'); ok.textContent = 'Save'; ok.className = 'modal-ok';
+  const cancel = document.createElement('button'); cancel.textContent = 'Cancel'; cancel.className = 'modal-cancel';
+  buttons.appendChild(cancel); buttons.appendChild(ok);
+  footer.appendChild(addBtn); footer.appendChild(buttons);
+
+  dlg.appendChild(header);
+  content.appendChild(groupsContainer);
+  dlg.appendChild(content);
+  dlg.appendChild(footer);
+  modal.appendChild(dlg);
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) modal.style.display = 'none'; });
+
+  
+
+  return modal;
+}
+
+// Helper to create a key/value field row for session editor
+function makeFieldRow(key = '', type = 'REG_SZ', value = '') {
+  const row = document.createElement('div'); row.className = 'kv-row field-row';
+  const nameNode = document.createElement('input'); nameNode.type = 'text'; nameNode.className = 'kv-name field-key'; nameNode.value = key ? key : '';
+  if (key) nameNode.readOnly = true;
+  const typeNode = document.createElement('select'); typeNode.className = 'kv-type field-type';
+  ['REG_SZ','REG_EXPAND_SZ','REG_DWORD','REG_BINARY'].forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; if (t === type) o.selected = true; typeNode.appendChild(o); });
+  const valNode = document.createElement('input'); valNode.type = 'text'; valNode.className = 'kv-val field-val'; valNode.value = value;
+  const del = document.createElement('button'); del.className = 'kv-del'; del.textContent = 'Remove';
+  row.appendChild(nameNode); row.appendChild(typeNode); row.appendChild(valNode); row.appendChild(del);
+  return { row, nameNode, typeNode, valNode, del };
+}
+
+async function showEditSessionDialog(sessionName) {
+  const modal = createEditSessionDialog();
+  const headerInfo = modal.querySelector('.modal-header .modal-info');
+  const groupsContainer = modal.querySelector('.groups');
+  const content = modal.querySelector('.modal-content');
+  const ok = modal.querySelector('.modal-ok');
+  const cancel = modal.querySelector('.modal-cancel');
+  const addBtn = modal.querySelector('.modal-add');
+
+  headerInfo.textContent = `Session: ${sessionName}`;
+  groupsContainer.innerHTML = '';
+
+  // define groups and known keys (inspired by PuTTY settings)
+  const groups = [
+    { id: 'session', title: 'Session', keys: ['HostName','PortNumber','Protocol','UserName'] },
+    { id: 'connection', title: 'Connection', keys: ['LocalCommand','TCPNoDelay'] },
+    { id: 'ssh', title: 'SSH', keys: ['Compression','PreferredAuthentications'] },
+    { id: 'proxy', title: 'Proxy', keys: ['ProxyType','ProxyHost','ProxyPort','ProxyUsername','ProxyPassword'] },
+    { id: 'appearance', title: 'Appearance', keys: ['Font','TerminalType','Width','Height'] },
+    { id: 'other', title: 'Other', keys: [] }
+  ];
+
+  // create group elements
+  const groupEls = {};
+  for (const g of groups) {
+    const ge = document.createElement('div'); ge.className = 'group';
+    const gt = document.createElement('div'); gt.className = 'group-title'; gt.textContent = g.title;
+    const gb = document.createElement('div'); gb.className = 'group-body';
+    ge.appendChild(gt); ge.appendChild(gb);
+    groupsContainer.appendChild(ge);
+    groupEls[g.id] = gb;
+  }
+
+  // load existing values
+  let values = {};
+  try {
+    const r = await window.electronAPI.getSessionValues(sessionName);
+    if (r && r.success) values = r.values || {};
+  } catch (e) { values = {}; }
+
+  const deletedNames = new Set();
+
+  // helper to add a field to a group's body
+  function addFieldToGroup(groupId, key, type, val, existing) {
+    const gb = groupEls[groupId] || groupEls['other'];
+    const obj = makeFieldRow(key, type, val);
+    const row = obj.row; const nameNode = obj.nameNode; const typeNode = obj.typeNode; const valNode = obj.valNode; const del = obj.del;
+    if (!key) nameNode.readOnly = false;
+    del.addEventListener('click', () => {
+      const orig = row.dataset.originalName || nameNode.value;
+      if (orig) deletedNames.add(orig);
+      row.remove();
+    });
+    row.dataset.originalName = key || '';
+    gb.appendChild(row);
+  }
+
+  // populate known keys into groups, remaining into Other
+  const placed = new Set();
+  for (const g of groups) {
+    for (const k of g.keys) {
+      if (values.hasOwnProperty(k)) {
+        const v = values[k] || {};
+        addFieldToGroup(g.id, k, v.type || 'REG_SZ', v.value || '', true);
+        placed.add(k);
+      }
+    }
+  }
+  // remaining values
+  Object.keys(values || {}).forEach(k => {
+    if (!placed.has(k)) {
+      const v = values[k] || {};
+      addFieldToGroup('other', k, v.type || 'REG_SZ', v.value || '', true);
+    }
+  });
+
+  // add button adds new field to Other
+  addBtn.addEventListener('click', () => {
+    addFieldToGroup('other', '', 'REG_SZ', '', false);
+  });
+
+  modal.style.display = 'flex';
+
+  return new Promise((resolve) => {
+    const cleanup = () => { ok.removeEventListener('click', onOk); cancel.removeEventListener('click', onCancel); modal.style.display='none'; };
+    const onOk = async () => {
+      // collect all rows
+      const rows = Array.from(modal.querySelectorAll('.kv-row'));
+      const setObj = {};
+      for (const r of rows) {
+        const nameNode = r.querySelector('.kv-name');
+        const typeNode = r.querySelector('.kv-type');
+        const valNode = r.querySelector('.kv-val');
+        let name = nameNode && nameNode.value ? nameNode.value.trim() : '';
+        if (name === '(Default)') name = '';
+        const typ = typeNode && typeNode.value ? typeNode.value : 'REG_SZ';
+        const val = valNode && valNode.value !== undefined ? valNode.value : '';
+        setObj[name] = { type: typ, value: val };
+      }
+      const delList = Array.from(deletedNames);
+      const payload = { set: setObj, delete: delList };
+      const res = await window.electronAPI.saveSessionValues(sessionName, payload);
+      if (!res || !res.success) alert('Failed to save session: ' + (res && res.error));
+      else { await refreshSessions(); }
+      cleanup();
+      resolve();
+    };
+    const onCancel = () => { cleanup(); resolve(); };
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+  });
+}
 
 async function refreshSessions() {
   const tree = await window.electronAPI.listPuttySessionsTree();
@@ -547,7 +736,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  $('refreshSessions').addEventListener('click', refreshSessions);
+  $('refreshSessions').addEventListener('click', async () => {
+    if (window.electronAPI && typeof window.electronAPI.reloadSessions === 'function') {
+      const r = await window.electronAPI.reloadSessions();
+      if (!r || !r.success) return alert('Failed to reload sessions: ' + (r && r.error));
+    }
+    await refreshSessions();
+  });
 
   // import/export handlers
   $('exportReg')?.addEventListener('click', async () => {
@@ -571,12 +766,7 @@ window.addEventListener('DOMContentLoaded', () => {
     else { alert('Imported JSON'); await refreshSessions(); }
   });
 
-  $('launchSession').addEventListener('click', async () => {
-    const ul = $('sessionsList');
-    const sel = ul.querySelector('.selected');
-    if (!sel) return alert('Select a session from the list');
-    const session = sel.textContent;
-    const res = await window.electronAPI.launchPutty({ session });
-    if (!res.success) alert('Failed to launch session: ' + (res.error || 'unknown'));
+  $('newSession').addEventListener('click', async () => {
+    await showNewSessionDialog();
   });
 });

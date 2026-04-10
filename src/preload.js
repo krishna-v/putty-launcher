@@ -19,4 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   , importSessionsReg: () => ipcRenderer.invoke('import-sessions-reg')
   , exportSessionsJson: () => ipcRenderer.invoke('export-sessions-json')
   , importSessionsJson: () => ipcRenderer.invoke('import-sessions-json')
+  , reloadSessions: () => ipcRenderer.invoke('reload-sessions')
+  , getSessionValues: (sessionName) => ipcRenderer.invoke('get-session-values', sessionName)
+  , saveSessionValues: (sessionName, values) => ipcRenderer.invoke('save-session-values', sessionName, values)
 });
