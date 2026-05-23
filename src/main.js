@@ -27,43 +27,104 @@ async function writeConfig(obj) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 400,
-    height: 800,
+    width: 1000,
+    height: 900,
+    minWidth: 500,
+    minHeight: 600,
+    resizable: true,
     icon: path.join(__dirname, 'launcher.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      devTools: true
     }
   });
-  // win.webContents.openDevTools()
+  
   win.loadFile(path.join(__dirname, 'index.html'));
 
   // Application menu with File -> New Session
+  let cloneMenuItem, launchMenuItem;
   try {
     const template = [
       {
         label: 'File',
         submenu: [
-          { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => { win.webContents.send('open-new-session'); } },
           { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => { win.webContents.send('open-settings'); } },
           { type: 'separator' },
           { label: 'Export Sessions (.reg)', click: () => { win.webContents.send('menu-export-reg'); } },
           { label: 'Export Sessions (.json)', click: () => { win.webContents.send('menu-export-json'); } },
           { label: 'Import Sessions (.reg)', click: () => { win.webContents.send('menu-import-reg'); } },
           { label: 'Import Sessions (.json)', click: () => { win.webContents.send('menu-import-json'); } },
+          { label: 'Refresh Sessions', accelerator: 'F5', click: () => { win.webContents.send('menu-refresh-sessions'); } },
           { type: 'separator' },
           { role: 'quit' }
+        ]
+      },
+      {
+        label: 'Session',
+        submenu: [
+          { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => { win.webContents.send('open-new-session'); } },
+          { id: 'clone', label: 'Clone', enabled: false, click: () => { win.webContents.send('menu-clone-session'); } },
+          { id: 'launch', label: 'Launch', accelerator: 'CmdOrCtrl+Enter', enabled: false, click: () => { win.webContents.send('menu-launch-session'); } },
+          { id: 'rename', label: 'Rename', enabled: false, click: () => { win.webContents.send('menu-rename-session'); } },
+          { id: 'delete', label: 'Delete', enabled: false, click: () => { win.webContents.send('menu-delete-session'); } }
         ]
       }
     ];
     const menu = Menu.buildFromTemplate(template);
+    cloneMenuItem = menu.getMenuItemById('clone');
+    launchMenuItem = menu.getMenuItemById('launch');
     Menu.setApplicationMenu(menu);
   } catch (e) {
     // ignore menu errors on platforms without menu support
   }
+  /*
+  win.webContents.closeDevTools();
+  setTimeout(() => {
+    win.webContents.openDevTools();
+  }, 1000);
+  */
 }
+
+ipcMain.handle('update-session-menu-state', (event, hasSelection) => {
+  try {
+    const menu = Menu.getApplicationMenu();
+    if (menu) {
+      const cloneItem = menu.getMenuItemById('clone');
+      const launchItem = menu.getMenuItemById('launch');
+      const renameItem = menu.getMenuItemById('rename');
+      const deleteItem = menu.getMenuItemById('delete');
+      if (cloneItem) cloneItem.enabled = hasSelection;
+      if (launchItem) launchItem.enabled = hasSelection;
+      if (renameItem) renameItem.enabled = hasSelection;
+      if (deleteItem) deleteItem.enabled = hasSelection;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return { success: true };
+});
 
 // In-memory cache of sessions: map of encodedKey -> { session, values }
 let sessionsCache = {};
+
+function encodeSessionName(name) {
+  return encodeURIComponent(String(name || ''));
+}
+
+function runRegCommand(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('reg', args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) return resolve({ stdout, stderr });
+      return reject(new Error(stderr || stdout || `reg exited with code ${code}`));
+    });
+  });
+}
 
 function regQueryRaw(key, flags = '') {
   return new Promise((resolve) => {
@@ -229,16 +290,10 @@ ipcMain.handle('set-session-category', async (event, sessionName, categoryPath) 
   if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
   try {
     const baseKey = 'HKCU\\Software\\SimonTatham\\PuTTY\\Sessions';
-    const enc = encodeURIComponent(sessionName);
+    const enc = encodeSessionName(sessionName);
     const fullKey = `${baseKey}\\${enc}`;
     const safe = String(categoryPath || '');
-    await new Promise((resolve, reject) => {
-      exec(`reg add "${fullKey}" /v Category /t REG_SZ /d "${safe}" /f`, { windowsHide: true }, (err, stdout, stderr) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
-    // reload cache to keep in-memory state in sync
+    await runRegCommand(['add', fullKey, '/v', 'Category', '/t', 'REG_SZ', '/d', safe, '/f']);
     await loadSessionsFromRegistry();
     return { success: true };
   } catch (e) {
@@ -249,7 +304,7 @@ ipcMain.handle('set-session-category', async (event, sessionName, categoryPath) 
 ipcMain.handle('get-session-category', async (event, sessionName) => {
   if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform', category: '' };
   try {
-    const enc = encodeURIComponent(sessionName);
+    const enc = encodeSessionName(sessionName);
     const entry = sessionsCache[enc];
     const category = (entry && entry.values && entry.values['Category'] && entry.values['Category'].value) ? entry.values['Category'].value : '';
     return { success: true, category };
@@ -262,7 +317,7 @@ ipcMain.handle('get-session-category', async (event, sessionName) => {
 ipcMain.handle('get-session-values', async (event, sessionName) => {
   if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform', values: {} };
   try {
-    const enc = encodeURIComponent(sessionName);
+    const enc = encodeSessionName(sessionName);
     const entry = sessionsCache[enc];
     return { success: true, values: entry ? entry.values : {} };
   } catch (e) {
@@ -270,16 +325,51 @@ ipcMain.handle('get-session-values', async (event, sessionName) => {
   }
 });
 
+ipcMain.handle('rename-session', async (event, oldName, newName) => {
+  if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
+  try {
+    const from = String(oldName || '').trim();
+    const to = String(newName || '').trim();
+    if (!from || !to) return { success: false, error: 'Session names cannot be empty' };
+    if (from === to) return { success: true };
+    const fromEnc = encodeSessionName(from);
+    const toEnc = encodeSessionName(to);
+    const baseKey = 'HKCU\\Software\\SimonTatham\\PuTTY\\Sessions';
+    const fromKey = `${baseKey}\\${fromEnc}`;
+    const toKey = `${baseKey}\\${toEnc}`;
+    if (!sessionsCache[fromEnc]) return { success: false, error: 'Source session not found' };
+    if (sessionsCache[toEnc]) return { success: false, error: 'Target session already exists' };
+    await runRegCommand(['copy', fromKey, toKey, '/s', '/f']);
+    await runRegCommand(['delete', fromKey, '/f']);
+    await loadSessionsFromRegistry();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('delete-session', async (event, sessionName) => {
+  if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
+  try {
+    const name = String(sessionName || '').trim();
+    if (!name) return { success: false, error: 'Session name cannot be empty' };
+    const enc = encodeSessionName(name);
+    const keyPath = `HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\${enc}`;
+    await runRegCommand(['delete', keyPath, '/f']);
+    await loadSessionsFromRegistry();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+});
+
 // save provided values for a session (adds/updates values). Accepts payload { set: {...}, delete: [...] }
 ipcMain.handle('save-session-values', async (event, sessionName, payload) => {
   if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
   try {
-    const enc = encodeURIComponent(sessionName);
+    const enc = encodeSessionName(sessionName);
     const keyPath = `HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\${enc}`;
-    // ensure key exists
-    await new Promise((resolve, reject) => {
-      exec(`reg add "${keyPath}" /f`, { windowsHide: true }, (err) => { if (err) return reject(err); resolve(); });
-    });
+    await runRegCommand(['add', keyPath, '/f']);
     const sets = (payload && payload.set) ? payload.set : payload || {};
     const dels = (payload && Array.isArray(payload.delete)) ? payload.delete : [];
 
@@ -288,24 +378,20 @@ ipcMain.handle('save-session-values', async (event, sessionName, payload) => {
       const v = sets[vn] || {};
       const typ = (v.type || 'REG_SZ');
       const dat = (v.value !== undefined && v.value !== null) ? String(v.value) : '';
-      await new Promise((resolve, reject) => {
-        if (vn === '' || vn === '(Default)' || vn === '@') {
-          exec(`reg add "${keyPath}" /ve /t ${typ} /d "${dat}" /f`, { windowsHide: true }, (err) => { if (err) return reject(err); resolve(); });
-        } else {
-          exec(`reg add "${keyPath}" /v "${vn}" /t ${typ} /d "${dat}" /f`, { windowsHide: true }, (err) => { if (err) return reject(err); resolve(); });
-        }
-      });
+      if (vn === '' || vn === '(Default)' || vn === '@') {
+        await runRegCommand(['add', keyPath, '/ve', '/t', typ, '/d', dat, '/f']);
+      } else {
+        await runRegCommand(['add', keyPath, '/v', vn, '/t', typ, '/d', dat, '/f']);
+      }
     }
 
     // delete specified values
     for (const vn of dels) {
-      await new Promise((resolve, reject) => {
-        if (vn === '' || vn === '(Default)' || vn === '@') {
-          exec(`reg delete "${keyPath}" /ve /f`, { windowsHide: true }, (err) => { if (err) return reject(err); resolve(); });
-        } else {
-          exec(`reg delete "${keyPath}" /v "${vn}" /f`, { windowsHide: true }, (err) => { if (err) return reject(err); resolve(); });
-        }
-      });
+      if (vn === '' || vn === '(Default)' || vn === '@') {
+        await runRegCommand(['delete', keyPath, '/ve', '/f']);
+      } else {
+        await runRegCommand(['delete', keyPath, '/v', vn, '/f']);
+      }
     }
 
     // reload cache to reflect changes
@@ -394,6 +480,53 @@ ipcMain.handle('import-sessions-reg', async () => {
   }
 });
 
+// Create a single temporary session via a .reg import (faster than many reg add calls)
+ipcMain.handle('create-temp-session-reg', async (event, sessionName, values) => {
+  if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
+  try {
+    const prefix = 'HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\';
+    const enc = encodeSessionName(sessionName);
+    const keyPath = prefix + enc;
+    const header = 'Windows Registry Editor Version 5.00\r\n\r\n';
+    const lines = [header];
+    lines.push('[' + keyPath + ']');
+    for (const vn of Object.keys(values || {})) {
+      const v = values[vn] || {};
+      const type = (v.type || '').toUpperCase();
+      const raw = v.value !== undefined && v.value !== null ? String(v.value) : '';
+      const nameLit = (vn === '' ? '@' : `"${vn.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`);
+      if (type.includes('DWORD')) {
+        let num = 0;
+        if (/^0x/i.test(raw)) num = parseInt(raw, 16);
+        else if (/^\d+$/.test(raw)) num = parseInt(raw, 10);
+        const hex = num.toString(16).padStart(8, '0');
+        lines.push(`${nameLit}=dword:${hex}`);
+      } else if (/^hex/i.test(raw) || type.includes('BINARY')) {
+        let payload = raw;
+        if (payload.toLowerCase().startsWith('hex:')) payload = payload.substr(4);
+        lines.push(`${nameLit}=hex:${payload}`);
+      } else {
+        const esc = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        lines.push(`${nameLit}="${esc}"`);
+      }
+    }
+    lines.push('\r\n');
+    const tmpReg = path.join(require('os').tmpdir(), `putty-temp-${Date.now()}.reg`);
+    await fs.writeFile(tmpReg, lines.join('\r\n'), 'utf8');
+    await new Promise((resolve, reject) => {
+      exec(`reg import "${tmpReg}"`, { windowsHide: true }, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+    await fs.unlink(tmpReg);
+    await loadSessionsFromRegistry();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+});
+
 // Export sessions metadata (full session registry values) as JSON using `reg query /s`
 ipcMain.handle('export-sessions-json', async () => {
   if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
@@ -423,26 +556,19 @@ ipcMain.handle('import-sessions-json', async () => {
     // expect array of {session, category}
     await Promise.all((arr || []).map(async (it) => {
       const sessionName = it.session;
-      const enc = encodeURIComponent(sessionName);
+      const enc = encodeSessionName(sessionName);
       const keyPath = `HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\${enc}`;
       const values = it.values || it.v || {};
-      // ensure key exists
-      await new Promise((resolve) => {
-        exec(`reg add "${keyPath}" /f`, { windowsHide: true }, () => resolve());
-      });
-      // set each value
+      await runRegCommand(['add', keyPath, '/f']);
       await Promise.all(Object.keys(values).map(async (vn) => {
         const v = values[vn];
         const typ = (v && v.type) ? v.type : 'REG_SZ';
         const dat = (v && v.value !== undefined) ? String(v.value) : '';
-        await new Promise((resolve) => {
-          // handle default value name
-          if (vn === '(Default)' || vn === '' || vn === '@') {
-            exec(`reg add "${keyPath}" /ve /t ${typ} /d "${dat}" /f`, { windowsHide: true }, () => resolve());
-          } else {
-            exec(`reg add "${keyPath}" /v "${vn}" /t ${typ} /d "${dat}" /f`, { windowsHide: true }, () => resolve());
-          }
-        });
+        if (vn === '(Default)' || vn === '' || vn === '@') {
+          await runRegCommand(['add', keyPath, '/ve', '/t', typ, '/d', dat, '/f']);
+        } else {
+          await runRegCommand(['add', keyPath, '/v', vn, '/t', typ, '/d', dat, '/f']);
+        }
       }));
     }));
     // refresh cache
@@ -456,6 +582,127 @@ ipcMain.handle('import-sessions-json', async () => {
 // reload sessions from registry on demand
 ipcMain.handle('reload-sessions', async () => {
   try {
+    await loadSessionsFromRegistry();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+});
+
+// Parse .reg file to extract session names
+function parseRegFileForSessions(content) {
+  const sessions = [];
+  const lines = content.split(/\r?\n/);
+  const prefix = 'HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\';
+  for (const line of lines) {
+    if (line.startsWith('[') && line.endsWith(']')) {
+      const key = line.slice(1, -1);
+      if (key.startsWith(prefix)) {
+        const suffix = key.slice(prefix.length);
+        try {
+          const decoded = decodeURIComponent(suffix);
+          if (!sessions.includes(decoded)) sessions.push(decoded);
+        } catch (e) {
+          // ignore invalid
+        }
+      }
+    }
+  }
+  return sessions;
+}
+
+// Preview import from .reg file
+ipcMain.handle('preview-import-reg', async () => {
+  if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
+  const win = BrowserWindow.getFocusedWindow();
+  const res = await dialog.showOpenDialog(win, { title: 'Preview Import PuTTY Sessions (.reg)', properties: ['openFile'], filters: [{ name: 'Registry Files', extensions: ['reg'] }] });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { success: false, error: 'cancelled' };
+  const filePath = res.filePaths[0];
+  try {
+    const content = await fs.readFile(filePath, 'utf8');
+    const sessions = parseRegFileForSessions(content);
+    return { success: true, filePath, type: 'reg', sessions };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+});
+
+// Preview import from JSON file
+ipcMain.handle('preview-import-json', async () => {
+  if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
+  const win = BrowserWindow.getFocusedWindow();
+  const res = await dialog.showOpenDialog(win, { title: 'Preview Import PuTTY Sessions (.json)', properties: ['openFile'], filters: [{ name: 'JSON Files', extensions: ['json'] }] });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { success: false, error: 'cancelled' };
+  const filePath = res.filePaths[0];
+  try {
+    const content = await fs.readFile(filePath, 'utf8');
+    const arr = JSON.parse(content);
+    const sessions = (arr || []).map(it => it.session).filter(Boolean);
+    return { success: true, filePath, type: 'json', sessions };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+});
+
+// Import selected sessions from file
+ipcMain.handle('import-selected-sessions', async (event, { filePath, type, selectedSessions }) => {
+  if (process.platform !== 'win32') return { success: false, error: 'Not supported on this platform' };
+  try {
+    if (type === 'json') {
+      const content = await fs.readFile(filePath, 'utf8');
+      const arr = JSON.parse(content);
+      const filtered = (arr || []).filter(it => selectedSessions.includes(it.session));
+      await Promise.all(filtered.map(async (it) => {
+        const sessionName = it.session;
+        const enc = encodeSessionName(sessionName);
+        const keyPath = `HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\${enc}`;
+        const values = it.values || it.v || {};
+        await runRegCommand(['add', keyPath, '/f']);
+        await Promise.all(Object.keys(values).map(async (vn) => {
+          const v = values[vn];
+          const typ = (v && v.type) ? v.type : 'REG_SZ';
+          const dat = (v && v.value !== undefined) ? String(v.value) : '';
+          if (vn === '(Default)' || vn === '' || vn === '@') {
+            await runRegCommand(['add', keyPath, '/ve', '/t', typ, '/d', dat, '/f']);
+          } else {
+            await runRegCommand(['add', keyPath, '/v', vn, '/t', typ, '/d', dat, '/f']);
+          }
+        }));
+      }));
+    } else if (type === 'reg') {
+      const content = await fs.readFile(filePath, 'utf8');
+      const lines = content.split(/\r?\n/);
+      const selectedEncoded = selectedSessions.map(s => encodeSessionName(s));
+      const filteredLines = [];
+      let include = false;
+      for (const line of lines) {
+        if (line.startsWith('[') && line.endsWith(']')) {
+          const key = line.slice(1, -1);
+          // Handle both "SimonTatham" and "Simon Tatham" formats
+          let isSessionKey = false;
+          let suffix = '';
+          if (key.includes('\\PuTTY\\Sessions\\')) {
+            const parts = key.split('\\PuTTY\\Sessions\\');
+            if (parts.length === 2) {
+              suffix = parts[1];
+              isSessionKey = true;
+            }
+          }
+          include = isSessionKey && selectedEncoded.includes(suffix);
+        }
+        if (include) filteredLines.push(line);
+      }
+      const tempReg = path.join(require('os').tmpdir(), `putty-import-${Date.now()}.reg`);
+      const regContent = 'Windows Registry Editor Version 5.00\r\n\r\n' + filteredLines.join('\r\n');
+      await fs.writeFile(tempReg, regContent, 'utf8');
+      await new Promise((resolve, reject) => {
+        exec(`reg import "${tempReg}"`, { windowsHide: true }, (err) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+      await fs.unlink(tempReg);
+    }
     await loadSessionsFromRegistry();
     return { success: true };
   } catch (e) {

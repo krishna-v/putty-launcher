@@ -9,16 +9,29 @@
   </head>
   <body>
     <div id="app">
-      <section style="margin-top:18px">
-        <h2>Saved PuTTY Sessions</h2>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button id="refreshSessions">Refresh</button>
-          <button id="newSession">New...</button>
+      <!-- div class="app-header">
+        <div>
+          <h2>Saved PuTTY Sessions</h2>
+          <p class="subtle">Browse categories on the left and inspect sessions on the right.</p>
         </div>
-        <ul id="sessionsList" style="margin-top:8px;padding:6px;border:1px solid #ddd;list-style:none"></ul>
-      </section>
+      </div -->
 
-      <p style="margin-top:20px;color:#666">Note: installer support added; build with <code>npm run dist</code>.</p>
+      <div class="explorer-layout">
+        <aside id="treePanel">
+          <div class="panel-title">Session Categories</div>
+          <ul id="sessionsList" class="tree-view"></ul>
+        </aside>
+        <div id="splitter" class="splitter" role="separator" aria-orientation="vertical" tabindex="0"></div>
+        <main id="detailsPanel">
+          <div class="panel-title">Details</div>
+          <div id="detailsContent" class="details-content">
+            <p class="detail-empty">Select a category or session to view subitems and properties.</p>
+          </div>
+        </main>
+      </div>
+      <p class="footer-note">Note: installer support added; build with <code>npm run dist</code>.</p>
+
+      <div id="statusBar" class="status-bar" aria-live="polite"></div>
     </div>
     <script src="renderer.js"></script>
   </body>
