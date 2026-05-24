@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { spawn, exec } = require('child_process');
 
-const CONFIG_FILE = 'putty-launcher.json';
+const CONFIG_FILE = 'config.json';
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), CONFIG_FILE);
@@ -198,6 +198,13 @@ app.on('activate', () => {
 // IPC handlers
 ipcMain.handle('get-config', async () => {
   return await readConfig();
+});
+
+ipcMain.handle('set-config-value', async (event, key, value) => {
+  const cfg = await readConfig();
+  cfg[key] = value;
+  await writeConfig(cfg);
+  return cfg;
 });
 
 ipcMain.handle('set-putty-path', async (event, puttyPath) => {

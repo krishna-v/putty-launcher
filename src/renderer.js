@@ -5,6 +5,11 @@ async function refreshConfig() {
   return await window.electronAPI.getConfig();
 }
 
+function applyTheme(theme) {
+  if (theme !== 'dark') theme = 'light';
+  document.documentElement.dataset.theme = theme;
+}
+
 function renderSessionsTree(tree) {
   const ul = $('sessionsList');
   ul.innerHTML = '';
@@ -1213,9 +1218,16 @@ function createSettingsDialog() {
   title.textContent = 'Settings';
 
   const label = document.createElement('label'); label.textContent = 'Path to PuTTY executable';
+  const pathRow = document.createElement('div'); pathRow.className = 'modal-field-row';
   const input = document.createElement('input'); input.type = 'text'; input.className = 'modal-input'; input.id = 'settings-puttyPath';
+  const choose = document.createElement('button'); choose.className = 'modal-choose modal-file-button'; choose.type = 'button'; choose.innerHTML = '📁'; choose.title = 'Choose PuTTY executable';
+  pathRow.appendChild(input);
+  pathRow.appendChild(choose);
 
-  const choose = document.createElement('button'); choose.textContent = 'Choose'; choose.className = 'modal-choose';
+  const themeLabel = document.createElement('label'); themeLabel.textContent = 'Theme';
+  const themeSelect = document.createElement('select'); themeSelect.className = 'modal-input'; themeSelect.id = 'settings-theme';
+  themeSelect.innerHTML = '<option value="light">Light</option><option value="dark">Dark</option>';
+
   const buttons = document.createElement('div'); buttons.className = 'modal-buttons';
   const ok = document.createElement('button'); ok.textContent = 'Save'; ok.className = 'modal-ok';
   const cancel = document.createElement('button'); cancel.textContent = 'Cancel'; cancel.className = 'modal-cancel';
@@ -1223,8 +1235,9 @@ function createSettingsDialog() {
 
   dlg.appendChild(title);
   dlg.appendChild(label);
-  dlg.appendChild(input);
-  dlg.appendChild(choose);
+  dlg.appendChild(pathRow);
+  dlg.appendChild(themeLabel);
+  dlg.appendChild(themeSelect);
   dlg.appendChild(buttons);
   modal.appendChild(dlg);
   document.body.appendChild(modal);
@@ -1241,11 +1254,18 @@ function createSettingsDialog() {
 
   ok.addEventListener('click', async () => {
     const inp = modal.querySelector('#settings-puttyPath');
+    const themeSelectEl = modal.querySelector('#settings-theme');
     const p = inp.value.trim();
-    if (!p) return alert('Please choose a valid path');
-    await window.electronAPI.setPuttyPath(p);
+    const theme = themeSelectEl.value || 'light';
+    await window.electronAPI.setConfigValue('theme', theme);
+    if (p) {
+      await window.electronAPI.setPuttyPath(p);
+      alert('Saved PuTTY path and theme');
+    } else {
+      alert('Saved theme');
+    }
+    applyTheme(theme);
     modal.style.display = 'none';
-    alert('Saved PuTTY path');
   });
 
   // Cancel should hide the settings modal
@@ -1259,8 +1279,10 @@ function createSettingsDialog() {
 async function showSettingsDialog() {
   const modal = createSettingsDialog();
   const input = modal.querySelector('#settings-puttyPath');
+  const themeSelectEl = modal.querySelector('#settings-theme');
   const cfg = await refreshConfig();
   input.value = (cfg && cfg.puttyPath) ? cfg.puttyPath : '';
+  themeSelectEl.value = (cfg && cfg.theme) ? cfg.theme : 'light';
   modal.style.display = 'flex';
   input.focus();
 }
@@ -1356,8 +1378,9 @@ async function showImportPreviewModal(previewData) {
   });
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  refreshConfig();
+window.addEventListener('DOMContentLoaded', async () => {
+  const cfg = await refreshConfig();
+  applyTheme(cfg && cfg.theme ? cfg.theme : 'light');
   refreshSessions();
   setupSplitter();
 
