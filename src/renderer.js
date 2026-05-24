@@ -8,6 +8,7 @@ async function refreshConfig() {
 function applyTheme(theme) {
   if (theme !== 'dark') theme = 'light';
   document.documentElement.dataset.theme = theme;
+  window.electronAPI.setTheme(theme);
 }
 
 function renderSessionsTree(tree) {

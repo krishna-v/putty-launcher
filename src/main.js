@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const { spawn, exec } = require('child_process');
@@ -198,6 +198,10 @@ app.on('activate', () => {
 // IPC handlers
 ipcMain.handle('get-config', async () => {
   return await readConfig();
+});
+
+ipcMain.handle('set-theme', async (event, theme) => {
+  nativeTheme.themeSource = theme;
 });
 
 ipcMain.handle('set-config-value', async (event, key, value) => {

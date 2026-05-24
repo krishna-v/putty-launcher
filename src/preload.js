@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('get-config'),
+  setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   setConfigValue: (key, value) => ipcRenderer.invoke('set-config-value', key, value),
   setPuttyPath: (p) => ipcRenderer.invoke('set-putty-path', p),
   openExeDialog: () => ipcRenderer.invoke('open-exe-dialog'),
