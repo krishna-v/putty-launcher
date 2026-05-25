@@ -1,3 +1,11 @@
+categoryMap = {
+    "Session": ["HostName", "Protocol", "PortNumber", "UserName", "RemoteCommand"],
+    "Authentication": ["NoAuth", "NoTrivialAuth", "Banner", "TISAuth", "KIAuth", "GSSAPIAuth", "GSSAPIKEX", "GSSLibs", "GSSCustom", "PublicKeyFile", "DetachedCertificate", "AuthPlugin", "HostKey", "Cipher", "KEX", "RekeyTime", "RekeyBytes", "GssapiRekey"],
+    "Terminal": ["TerminalType", "TerminalSpeed", "TerminalModes", "PassiveTelnet", "BackspaceIsDelete", "RXVTHomeEnd", "LinuxFunctionKeys", "ShiftedArrowKeys", "NoApplicationKeys", "NoApplicationCursors", "NoMouseReporting", "NoRemoteResize", "NoAltScreen", "NoRemoteWinTitle", "NoRemoteClearScroll", "RemoteQTitleAction", "NoDBackspace", "NoRemoteCharset", "ApplicationCursorKeys", "ApplicationKeypad", "NetHackKeypad", "AltF4", "AltSpace", "AltOnly", "ComposeKey", "CtrlAltKeys", "TelnetKey", "TelnetRet"],
+    "Proxy": ["ProxyExcludeList", "ProxyDNS", "ProxyLocalhost", "ProxyMethod", "ProxyHost", "ProxyPort", "ProxyUsername", "ProxyPassword", "ProxyTelnetCommand", "ProxyLogToTerm"],
+    "Logging": ["LogFileName", "LogType", "LogFileClash", "LogFlush", "LogHeader", "SSHLogOmitPasswords", "SSHLogOmitData"]
+}
+
 function $(id) { return document.getElementById(id); }
 let currentSelectedSession = null;
 
@@ -358,14 +366,6 @@ async function showSessionDetails(sessionName) {
     return;
   }
 
-  const table = document.createElement('table');
-  table.className = 'details-table';
-  const thead = document.createElement('thead');
-  thead.innerHTML = '<tr><th>Key</th><th>Type</th><th>Value</th></tr>';
-  table.appendChild(thead);
-  const tbody = document.createElement('tbody');
-
-  // track edits
   const originalValues = JSON.parse(JSON.stringify(values));
   const edited = {};
 
@@ -375,79 +375,116 @@ async function showSessionDetails(sessionName) {
     cancelBtn.disabled = !hasEdits;
   }
 
+  const groups = {};
+  const categoryOrder = Object.keys(categoryMap || {});
+  categoryOrder.forEach(cat => { groups[cat] = []; });
+  groups.Misc = [];
+
   Object.keys(values).forEach(key => {
-    const item = values[key] || {};
-    const tr = document.createElement('tr');
-    const keyTd = document.createElement('td');
-    keyTd.textContent = key;
-    const typeTd = document.createElement('td');
-    typeTd.textContent = item.type || 'REG_SZ';
-    const valTd = document.createElement('td');
-
-    let displayValue = item.value || '';
-    let rawValue = item.value || '';
-    if ((item.type || '').toUpperCase() === 'REG_DWORD' && displayValue !== '') {
-      const parsed = Number(displayValue);
-      if (!Number.isNaN(parsed)) displayValue = String(parsed);
-      else if (/^0x[\da-fA-F]+$/.test(displayValue)) displayValue = String(parseInt(displayValue, 16));
-    }
-
-    const span = document.createElement('span');
-    span.textContent = displayValue;
-    if ((item.type || '').toUpperCase() === 'REG_DWORD' && rawValue !== '') span.title = `Raw: ${rawValue}`;
-    valTd.appendChild(span);
-
-    // enable editing on double-click (allow editing even when value is empty)
-    valTd.style.cursor = 'text';
-    valTd.addEventListener('dblclick', (e) => {
-      // don't re-enter edit mode if already editing
-      if (valTd.querySelector('input')) return;
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.value = rawValue;
-      input.style.width = '100%';
-      valTd.innerHTML = '';
-      valTd.appendChild(input);
-      input.focus();
-
-      function commit() {
-        const newVal = input.value;
-        rawValue = newVal;
-        // update displayed value for REG_DWORD
-        let out = newVal;
-        if ((item.type || '').toUpperCase() === 'REG_DWORD' && newVal !== '') {
-          const p = Number(newVal);
-          if (!Number.isNaN(p)) out = String(p);
-          else if (/^0x[\da-fA-F]+$/.test(newVal)) out = String(parseInt(newVal, 16));
-        }
-        span.textContent = out;
-        span.title = ((item.type || '').toUpperCase() === 'REG_DWORD') ? `Raw: ${rawValue}` : '';
-        valTd.innerHTML = '';
-        valTd.appendChild(span);
-        // record edit
-        if (rawValue !== (originalValues[key] && originalValues[key].value ? originalValues[key].value : '')) {
-          edited[key] = { type: item.type || 'REG_SZ', value: rawValue };
-        } else {
-          delete edited[key];
-        }
-        markDirty();
-      }
-
-      input.addEventListener('blur', commit);
-      input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
-        if (ev.key === 'Escape') { ev.preventDefault(); valTd.innerHTML = ''; valTd.appendChild(span); }
-      });
-    });
-
-    tr.appendChild(keyTd);
-    tr.appendChild(typeTd);
-    tr.appendChild(valTd);
-    tbody.appendChild(tr);
+    const category = categoryOrder.find(cat => (categoryMap[cat] || []).includes(key));
+    if (category) groups[category].push(key);
+    else groups.Misc.push(key);
   });
 
-  table.appendChild(tbody);
-  content.appendChild(table);
+  Object.keys(groups).forEach(groupName => {
+    const keys = groups[groupName];
+    if (!keys.length) return;
+
+    const detailGroup = document.createElement('details');
+    detailGroup.className = 'session-group';
+    if (groupName !== 'Misc') detailGroup.open = true;
+
+    const summary = document.createElement('summary');
+    summary.className = 'group-title';
+    summary.textContent = `${groupName} (${keys.length})`;
+    detailGroup.appendChild(summary);
+
+    const groupTable = document.createElement('table');
+    groupTable.className = 'details-table';
+    const thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Key</th><th>Value</th></tr>';
+    groupTable.appendChild(thead);
+    const tbody = document.createElement('tbody');
+
+    keys.forEach(key => {
+      const item = values[key] || {};
+      const tr = document.createElement('tr');
+      const keyTd = document.createElement('td');
+      keyTd.textContent = key;
+      keyTd.className = 'key-cell';
+      keyTd.title = item.type || 'REG_SZ';
+      const valTd = document.createElement('td');
+
+      let displayValue = item.value || '';
+      let rawValue = item.value || '';
+      if ((item.type || '').toUpperCase() === 'REG_DWORD' && displayValue !== '') {
+        const parsed = Number(displayValue);
+        if (!Number.isNaN(parsed)) displayValue = String(parsed);
+        else if (/^0x[\da-fA-F]+$/.test(displayValue)) displayValue = String(parseInt(displayValue, 16));
+      }
+
+      const span = document.createElement('span');
+      span.textContent = displayValue;
+      if ((item.type || '').toUpperCase() === 'REG_DWORD' && rawValue !== '') span.title = `Raw: ${rawValue}`;
+      valTd.appendChild(span);
+
+      valTd.style.cursor = 'text';
+      valTd.addEventListener('dblclick', (e) => {
+        if (valTd.querySelector('textarea')) return;
+        const textarea = document.createElement('textarea');
+        textarea.value = rawValue;
+        textarea.rows = 4;
+        textarea.style.width = '100%';
+        textarea.style.minHeight = '5rem';
+        textarea.style.resize = 'vertical';
+        textarea.style.boxSizing = 'border-box';
+        textarea.style.whiteSpace = 'pre-wrap';
+        textarea.style.overflowWrap = 'anywhere';
+        textarea.style.lineHeight = '1.4';
+        valTd.innerHTML = '';
+        valTd.appendChild(textarea);
+        textarea.focus();
+
+        function commit() {
+          const newVal = textarea.value;
+          rawValue = newVal;
+          let out = newVal;
+          if ((item.type || '').toUpperCase() === 'REG_DWORD' && newVal !== '') {
+            const p = Number(newVal);
+            if (!Number.isNaN(p)) out = String(p);
+            else if (/^0x[\da-fA-F]+$/.test(newVal)) out = String(parseInt(newVal, 16));
+          }
+          span.textContent = out;
+          span.title = ((item.type || '').toUpperCase() === 'REG_DWORD') ? `Raw: ${rawValue}` : '';
+          valTd.innerHTML = '';
+          valTd.appendChild(span);
+          if (rawValue !== (originalValues[key] && originalValues[key].value ? originalValues[key].value : '')) {
+            edited[key] = { type: item.type || 'REG_SZ', value: rawValue };
+          } else {
+            delete edited[key];
+          }
+          markDirty();
+        }
+
+        textarea.addEventListener('blur', commit);
+        textarea.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Escape') {
+            ev.preventDefault();
+            valTd.innerHTML = '';
+            valTd.appendChild(span);
+          }
+        });
+      });
+
+      tr.appendChild(keyTd);
+      tr.appendChild(valTd);
+      tbody.appendChild(tr);
+    });
+
+    groupTable.appendChild(tbody);
+    detailGroup.appendChild(groupTable);
+    content.appendChild(detailGroup);
+  });
 
   // Save handler
   saveBtn.addEventListener('click', async () => {

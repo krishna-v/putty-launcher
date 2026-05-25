@@ -193,6 +193,46 @@ html, body { height: 100%; overflow: hidden; }
   font-weight: 600;
 }
 
+.session-group {
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.session-group summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--panel-header);
+  border-bottom: 1px solid var(--border);
+}
+
+.session-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-group summary::after {
+  content: '▾';
+  font-size: 0.9em;
+  margin-left: 8px;
+}
+
+.session-group:not([open]) summary::after {
+  content: '▸';
+}
+
+.session-group table {
+  margin: 0;
+}
+
 .details-table {
   width: 100%;
   border-collapse: collapse;
@@ -205,12 +245,14 @@ html, body { height: 100%; overflow: hidden; }
   text-align: left;
   vertical-align: top;
   font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .details-table th {
   background: var(--table-head);
   color: var(--text);
-  width: 120px;
 }
 
 .footer-note {
@@ -415,7 +457,7 @@ html, body { height: 100%; overflow: hidden; }
 }
 .group-title { font-weight: 600; margin-bottom: 8px; }
 .field-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.field-row .field-key { width: 220px; }
+.field-row .field-key { max-width: 220px; }
 .field-row .field-type { width: 160px; }
 .field-row .field-val { flex: 1; }
 .kv-del { padding: 6px 8px; }
@@ -431,6 +473,7 @@ html, body { height: 100%; overflow: hidden; }
 .modal-add { background: #38a169; color: #fff; border-color: #38a169; }
 .modal-select-all { background: #2c5282; color: #fff; border-color: #2c5282; }
 .modal-deselect-all { background: #cbd5e0; color: #2d3748; border-color: #a0aec0; }
+.key-cell { font-family: 'Courier New', Courier, monospace; width: 35ch;max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Import preview modal */
 .session-list { max-height: 400px; overflow-y: auto; }
